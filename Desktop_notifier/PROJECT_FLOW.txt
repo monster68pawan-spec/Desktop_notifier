@@ -1,0 +1,184 @@
+DESKTOP NOTIFIER - PROJECT OVERVIEW AND EXECUTION FLOW
+=======================================================
+
+1. PROJECT PURPOSE
+------------------
+Desktop Notifier is a small Python desktop application for creating one-time
+reminders. The user chooses a date and time, enters a title and message, and
+the app displays the reminder in a list. When its scheduled time arrives, the
+app sends a Linux desktop notification and removes the reminder from the list.
+
+2. PROJECT FILES
+----------------
+desktop_notifier.py
+    Contains the entire application: window construction, input handling,
+    reminder storage and checking, list rendering, deletion, and notification
+    delivery.
+
+PROJECT_FLOW.txt
+    This documentation file, describing how the application works.
+
+There is no separate database, configuration file, or additional source
+module. Reminder data exists only in memory while the application is running.
+
+3. TECHNOLOGY AND REQUIREMENTS
+------------------------------
+- Python 3
+- Tkinter and ttk for the graphical interface
+- datetime for reading, parsing, comparing, and formatting dates and times
+- subprocess for calling the operating system's notification command
+- Linux's notify-send command (normally provided by libnotify)
+
+Tkinter and the Python modules used by the program are imported from the
+standard Python installation. notify-send is an external Linux command; it
+must be installed and usable by the current desktop session for notifications
+to appear.
+
+4. HOW THE PROGRAM STARTS
+-------------------------
+1. Python loads desktop_notifier.py and imports Tkinter, datetime, and
+   subprocess.
+2. The __main__ check is true when the file is run directly.
+3. tk.Tk() creates the main application window.
+4. DesktopNotifier(root) initializes application state and builds the window.
+5. root.mainloop() starts Tkinter's event loop. The event loop keeps the
+   interface responsive and dispatches button actions and scheduled callbacks.
+
+To run the app from this folder:
+
+    python3 desktop_notifier.py
+
+5. APPLICATION INITIALIZATION AND WINDOW LAYOUT
+-----------------------------------------------
+DesktopNotifier.__init__ performs the following setup:
+
+1. Stores the Tk root window and configures its title, fixed dimensions, and
+   background color.
+2. Defines the color palette used for the header, form, reminder cards, text,
+   status indicator, and buttons.
+3. Creates self.reminders as an empty Python list. Each reminder is represented
+   by a dictionary containing:
+       datetime - a datetime object for the scheduled date and time
+       title    - the reminder title
+       message  - the notification body
+4. Configures ttk styling for the time-selection comboboxes.
+5. Builds the header, which displays the bell icon, application name, and
+   subtitle.
+6. Creates the current-time label and calls update_current_time().
+7. Builds the reminder form:
+       Date        - text input, initially today's date (YYYY-MM-DD)
+       Hour        - read-only 12-hour selector
+       Minute      - read-only selector from 00 to 59
+       AM/PM       - read-only period selector
+       Title       - optional text input
+       Message     - required text input
+       Add Reminder - button connected to add_reminder()
+8. Builds the scrollable "Your Reminders" area using a Canvas, an inner Frame,
+   and a vertical scrollbar. Frame and canvas resize events keep the content
+   width and scroll region up to date.
+9. Creates the status label, renders the current (initially empty) reminder
+   list with refresh_reminders(), and schedules the reminder checker by
+   calling check_reminders().
+
+The time selectors initially use the current hour and AM/PM period. The minute
+selector is initialized to the next minute using (current minute + 1) modulo
+60.
+
+6. CURRENT CLOCK UPDATE
+-----------------------
+update_current_time() reads the current system date and time, formats it for
+display, updates the label, and uses root.after(1000, ...) to schedule itself
+again in approximately one second. Tkinter runs this callback through its
+event loop; the program does not create a separate clock thread.
+
+7. ADDING A REMINDER
+--------------------
+When the user clicks "Add Reminder", add_reminder() follows this flow:
+
+1. Reads the date, title, and message fields and trims leading/trailing
+   whitespace.
+2. Reads the selected hour, minute, and AM/PM values.
+3. If the message is empty, shows a warning and stops. A title is optional;
+   an empty title is replaced with "Reminder".
+4. Combines the date and selected time, then parses them using the expected
+   formats YYYY-MM-DD and 12-hour time with AM/PM.
+5. If parsing fails, shows a date-format error and stops.
+6. Compares the resulting datetime with the current system time. If it is not
+   in the future, shows a warning and stops.
+7. Creates a reminder dictionary and appends it to self.reminders.
+8. Sorts the list in ascending scheduled-time order.
+9. Calls refresh_reminders() so the displayed cards match the updated list.
+10. Clears the title and message fields, leaves the date/time selections as
+    they were, and updates the status text to indicate success.
+
+The reminder exists only in the current process's memory. It is not written to
+disk, so closing or restarting the app discards all reminders.
+
+8. DISPLAYING AND SCROLLING REMINDERS
+-------------------------------------
+refresh_reminders() destroys the old widgets inside the reminders frame before
+redrawing it from self.reminders. If the list is empty, it displays a
+"No reminders scheduled" message. Otherwise, it creates one card per reminder,
+showing the title, formatted date and time, message, and Delete button.
+
+The reminder cards are placed inside the Canvas-backed frame. When the inner
+frame changes size, update_scroll_region() recalculates the Canvas scrollable
+area. When the Canvas changes width, update_canvas_width() resizes the embedded
+frame to fit.
+
+9. DELETING A REMINDER
+----------------------
+Each card's Delete button calls delete_reminder() for that specific reminder.
+The app asks the user to confirm deletion. If the user cancels, nothing
+changes. If confirmed, the reminder is removed from self.reminders, the list
+is redrawn, and the status label reports that it was deleted.
+
+10. SCHEDULED CHECKS AND NOTIFICATION DELIVERY
+----------------------------------------------
+check_reminders() is scheduled from initialization and then repeats every
+second using root.after(1000, ...):
+
+1. Reads the current system time.
+2. Scans the in-memory reminder list for reminders whose scheduled datetime
+   has arrived or passed.
+3. Calls send_notification() for every due reminder.
+4. Collects due reminders and removes them from the list after processing.
+5. Redraws the list if any reminders were due.
+6. Schedules the next check for approximately one second later.
+
+send_notification() runs the following command through subprocess.run():
+
+    notify-send --app-name=Desktop Notifier --urgency=normal TITLE MESSAGE
+
+The command is run with check=True, so a non-zero exit status is treated as an
+error. On success, the status label is updated. If notify-send is not found,
+the app displays an installation error. If the command fails, the app displays
+a general Linux notification error.
+
+11. IMPORTANT BEHAVIOR AND LIMITATIONS
+---------------------------------------
+- Reminders are one-time events; they are removed from the list after their
+  notification is attempted.
+- Reminders are not persisted. They are lost when the window closes or the
+  process exits.
+- The program must remain open for its after() checker to deliver reminders.
+- Notifications depend on Linux and notify-send; this notification path is not
+  portable as written to Windows or macOS.
+- The date is manually entered and must use YYYY-MM-DD. Time selection uses a
+  12-hour clock with AM/PM.
+- The form rejects a reminder scheduled at or before the current time.
+- The UI uses Tkinter's event loop for clock refresh and reminder checks.
+- The fixed-size window cannot be resized; the reminder list itself can scroll.
+
+12. FUNCTION MAP
+----------------
+DesktopNotifier.__init__()       Initializes state, creates widgets, starts
+                                 clock refresh and reminder checks.
+update_current_time()            Updates the clock label every second.
+add_reminder()                   Validates input, creates and sorts reminders.
+refresh_reminders()              Rebuilds the reminder cards in the UI.
+delete_reminder(reminder)        Confirms and removes one reminder.
+check_reminders()                Finds due reminders and repeats every second.
+send_notification(reminder)       Calls Linux notify-send and reports errors.
+update_scroll_region(event)       Updates the scrollable Canvas bounds.
+update_canvas_width(event)       Keeps the embedded reminders frame full-width.
